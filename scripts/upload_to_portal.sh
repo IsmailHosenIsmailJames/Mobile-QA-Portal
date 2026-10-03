@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Rewardly QA Portal - Automated Test Bundle Upload Companion Script
+# Rewardly QA Portal - Automated Test Bundle Delivery Pipeline
 #
 # Enforces that ONLY release arm64 APKs are packaged and published to the QA portal.
+# Seamlessly delivers test artifacts to the Mobile QA Portal repository and live portal.
 # ==============================================================================
 # Usage:
-#   PORTAL_URL="https://mobile-qa-portal.vercel.app" API_KEY="your_api_secret" ./scripts/upload_to_portal.sh
-#   Or with arguments:
-#   ./scripts/upload_to_portal.sh --url http://localhost:3000 --key secret --bundle ./delivery_bundle
+#   ./scripts/upload_to_portal.sh
+#   Or with custom parameters:
+#   ./scripts/upload_to_portal.sh --portal-dir "/home/ismail/dev/Mobile QA Portal"
 # ==============================================================================
 set -euo pipefail
 
@@ -18,6 +19,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PORTAL_URL="${PORTAL_URL:-https://mobile-qa-portal.vercel.app}"
 API_KEY="${API_KEY:-rewardly_qa_secret_key_2026}"
 BUNDLE_DIR="${BUNDLE_DIR:-${ROOT_DIR}/delivery_bundle}"
+PORTAL_DIR="${PORTAL_DIR:-/home/ismail/dev/Mobile QA Portal}"
 RUN_ID="run-$(date +%Y%m%d-%H%M%S)"
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'main')"
 COMMIT_HASH="$(git rev-parse --short HEAD 2>/dev/null || echo 'manual-upload')"
@@ -26,10 +28,20 @@ AUTHOR="$(git log -1 --pretty=%an 2>/dev/null || echo 'QA Runner')"
 SYNC_GH=true
 GH_REPO="IsmailHosenIsmailJames/Mobile-QA-Portal"
 GH_TAG="v1.0.0"
+ZIP_UPLOAD=false
+
+# If default PORTAL_DIR doesn't exist, check sibling directory
+if [ ! -d "${PORTAL_DIR}" ] && [ -d "${ROOT_DIR}/../Mobile QA Portal" ]; then
+  PORTAL_DIR="$(realpath "${ROOT_DIR}/../Mobile QA Portal")"
+fi
 
 # Parse flags
 while [[ $# -gt 0 ]]; do
   case $1 in
+    --portal-dir)
+      PORTAL_DIR="$2"
+      shift 2
+      ;;
     --url)
       PORTAL_URL="$2"
       shift 2
@@ -54,15 +66,21 @@ while [[ $# -gt 0 ]]; do
       SYNC_GH=false
       shift
       ;;
+    --zip-upload)
+      ZIP_UPLOAD=true
+      shift
+      ;;
     -h|--help)
       echo "Rewardly QA Portal Uploader (Arm64 Release Only)"
       echo "Options:"
+      echo "  --portal-dir <DIR> Path to Mobile QA Portal repo (default: /home/ismail/dev/Mobile QA Portal)"
       echo "  --url <URL>        Portal base URL (default: https://mobile-qa-portal.vercel.app)"
       echo "  --key <KEY>        Portal API key / secret"
       echo "  --bundle <DIR>     Path to delivery_bundle directory"
       echo "  --run-id <ID>      Custom run identifier"
       echo "  --branch <BRANCH>  Git branch name"
       echo "  --no-sync-gh       Skip syncing arm64 APKs to GitHub Releases"
+      echo "  --zip-upload       Force uploading full zip to /api/upload (for localhost)"
       exit 0
       ;;
     *)
@@ -76,6 +94,7 @@ echo "========================================================================="
 echo "   REWARDLY QA PORTAL ARTIFACT DELIVERY PIPELINE (ARM64 RELEASE)        "
 echo "========================================================================="
 echo "Portal Target: ${PORTAL_URL}"
+echo "Portal Repo:   ${PORTAL_DIR}"
 echo "Run ID:        ${RUN_ID}"
 echo "Branch:        ${BRANCH} (${COMMIT_HASH})"
 echo "Bundle Dir:    ${BUNDLE_DIR}"
@@ -181,34 +200,36 @@ cat <<EOF > "${MANIFEST_FILE}"
 EOF
 
 # -----------------------------------------------------------------------------
-# 4. PACKAGE BUNDLE INTO ZIP
+# 4. DELIVERY TO PORTAL REPOSITORY (AVOIDS VERCEL 4.5MB PAYLOAD LIMITS)
+# -----------------------------------------------------------------------------
+if [ -d "${PORTAL_DIR}" ] && [ "${ZIP_UPLOAD}" = false ]; then
+  echo "🔗 Local Mobile QA Portal detected at: ${PORTAL_DIR}"
+  echo "🚀 Running direct sync & repository push (bypassing Vercel 4.5MB HTTP limit)..."
+  
+  node "${SCRIPT_DIR}/sync_to_portal.js" \
+    --bundle "${BUNDLE_DIR}" \
+    --portal-dir "${PORTAL_DIR}" \
+    --url "${PORTAL_URL}" \
+    --key "${API_KEY}"
+  
+  exit 0
+fi
+
+# -----------------------------------------------------------------------------
+# 5. FALLBACK / DIRECT HTTP ZIP UPLOAD (FOR LOCALHOST OR CUSTOM HOSTS)
 # -----------------------------------------------------------------------------
 TEMP_ZIP="/tmp/${RUN_ID}_bundle.zip"
 echo "📦 Packaging artifacts into zip bundle: ${TEMP_ZIP}..."
 
-# Note: Vercel serverless has a 4.5 MB request body limit.
-# If uploading to vercel.app, we exclude the 35 MB APK files from the zip upload
-# because APKs are already hosted on the GitHub Releases CDN with direct download URLs in the manifest.
-if [[ "${PORTAL_URL}" == *"vercel.app"* ]]; then
-  echo "ℹ️  Remote Vercel deployment detected: packaging screenshots, recordings, and manifest (APKs distributed via GitHub CDN)..."
-  (
-    cd "${BUNDLE_DIR}"
-    zip -r -q "${TEMP_ZIP}" . -x "apks/*"
-  )
-else
-  (
-    cd "${BUNDLE_DIR}"
-    zip -r -q "${TEMP_ZIP}" .
-  )
-fi
+(
+  cd "${BUNDLE_DIR}"
+  zip -r -q "${TEMP_ZIP}" .
+)
 
 BUNDLE_SIZE="$(du -h "${TEMP_ZIP}" | cut -f1)"
 echo "✔ Compressed bundle ready (${BUNDLE_SIZE})."
 echo ""
 
-# -----------------------------------------------------------------------------
-# 5. STREAM UPLOAD TO PORTAL API
-# -----------------------------------------------------------------------------
 UPLOAD_ENDPOINT="${PORTAL_URL}/api/upload"
 echo "🚀 Uploading test bundle to: ${UPLOAD_ENDPOINT}..."
 

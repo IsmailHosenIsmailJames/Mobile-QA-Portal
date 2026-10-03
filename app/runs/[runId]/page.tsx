@@ -3,6 +3,7 @@ import { getRunById, getAllRuns } from "@/lib/runs-db";
 import RunDetailClient from "@/components/RunDetailClient";
 
 export const revalidate = 0;
+export const dynamicParams = true;
 
 interface RunPageProps {
   params: Promise<{ runId: string }>;

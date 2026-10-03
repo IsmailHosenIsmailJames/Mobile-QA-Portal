@@ -3,6 +3,7 @@ import { getRunById, getAllRuns } from "@/lib/runs-db";
 import ScreenshotsPageClient from "@/components/ScreenshotsPageClient";
 
 export const revalidate = 0;
+export const dynamicParams = true;
 
 interface ScreenshotsPageProps {
   params: Promise<{ runId: string }>;
