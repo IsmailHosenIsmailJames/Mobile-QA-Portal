@@ -98,8 +98,11 @@ export async function POST(request: Request) {
       const now = new Date().toISOString();
       const existingRun = await getRunById(runId);
 
-      const customerApkKey = Object.keys(uploadedApks).find((k) => k.includes("customer")) || "customer_app_v1.0.0+1_debug.apk";
-      const vendorApkKey = Object.keys(uploadedApks).find((k) => k.includes("vendor")) || "vendor_app_v1.0.0+1_debug.apk";
+      const custManifest = manifestData.customerApp || {};
+      const vendManifest = manifestData.vendorApp || {};
+
+      const customerApkKey = custManifest.apkFileName || Object.keys(uploadedApks).find((k) => k.includes("customer")) || "customer_app_v1.0.0+1_arm64.apk";
+      const vendorApkKey = vendManifest.apkFileName || Object.keys(uploadedApks).find((k) => k.includes("vendor")) || "vendor_app_v1.0.0+1_arm64.apk";
 
       const customerVideoKey = Object.keys(uploadedVideos).find((k) => k.includes("customer")) || "customer_app_integration.mp4";
       const vendorVideoKey = Object.keys(uploadedVideos).find((k) => k.includes("vendor")) || "vendor_app_integration.mp4";
@@ -114,7 +117,7 @@ export async function POST(request: Request) {
         triggerType: manifestData.triggerType || "local_cli",
         environment: {
           os: manifestData.environment?.os || "Android 17 / Linux",
-          device: manifestData.environment?.device || "emulator-5554",
+          device: manifestData.environment?.device || "Pixel 8 Pro (arm64)",
           flutterVersion: manifestData.environment?.flutterVersion || "3.29.0",
           dartVersion: manifestData.environment?.dartVersion || "3.7.0",
           runnerHost: manifestData.environment?.runnerHost || "remote-runner",
@@ -129,11 +132,11 @@ export async function POST(request: Request) {
           packageName: "com.rolality.customer_app",
           version: "1.0.0",
           buildNumber: 1,
-          flavor: "debug",
+          flavor: custManifest.flavor || (customerApkKey.includes("debug") ? "debug" : "release"),
           apkFileName: customerApkKey,
-          apkUrl: uploadedApks[customerApkKey]?.url || existingRun?.customerApp.apkUrl || "/delivery_bundle/apks/customer_app_v1.0.0+1_debug.apk",
-          apkSizeFormatted: uploadedApks[customerApkKey]?.size || "105.8 MB",
-          apkSizeBytes: uploadedApks[customerApkKey]?.bytes || 110979890,
+          apkUrl: custManifest.apkUrl || uploadedApks[customerApkKey]?.url || existingRun?.customerApp.apkUrl || "https://github.com/IsmailHosenIsmailJames/Mobile-QA-Portal/releases/download/v1.0.0/customer_app_v1.0.0+1_arm64.apk",
+          apkSizeFormatted: custManifest.apkSizeFormatted || uploadedApks[customerApkKey]?.size || "17.5 MB",
+          apkSizeBytes: custManifest.apkSizeBytes || uploadedApks[customerApkKey]?.bytes || 18400601,
           videoFileName: customerVideoKey,
           videoUrl: uploadedVideos[customerVideoKey] || existingRun?.customerApp.videoUrl || "/delivery_bundle/recordings/customer_app_integration.mp4",
           videoSizeFormatted: "1.85 MB",
@@ -152,11 +155,11 @@ export async function POST(request: Request) {
           packageName: "com.rolality.vendor_app",
           version: "1.0.0",
           buildNumber: 1,
-          flavor: "debug",
+          flavor: vendManifest.flavor || (vendorApkKey.includes("debug") ? "debug" : "release"),
           apkFileName: vendorApkKey,
-          apkUrl: uploadedApks[vendorApkKey]?.url || existingRun?.vendorApp.apkUrl || "/delivery_bundle/apks/vendor_app_v1.0.0+1_debug.apk",
-          apkSizeFormatted: uploadedApks[vendorApkKey]?.size || "106.4 MB",
-          apkSizeBytes: uploadedApks[vendorApkKey]?.bytes || 111608367,
+          apkUrl: vendManifest.apkUrl || uploadedApks[vendorApkKey]?.url || existingRun?.vendorApp.apkUrl || "https://github.com/IsmailHosenIsmailJames/Mobile-QA-Portal/releases/download/v1.0.0/vendor_app_v1.0.0+1_arm64.apk",
+          apkSizeFormatted: vendManifest.apkSizeFormatted || uploadedApks[vendorApkKey]?.size || "17.2 MB",
+          apkSizeBytes: vendManifest.apkSizeBytes || uploadedApks[vendorApkKey]?.bytes || 18057957,
           videoFileName: vendorVideoKey,
           videoUrl: uploadedVideos[vendorVideoKey] || existingRun?.vendorApp.videoUrl || "/delivery_bundle/recordings/vendor_app_integration.mp4",
           videoSizeFormatted: "2.53 MB",
